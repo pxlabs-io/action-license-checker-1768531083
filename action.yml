@@ -1,0 +1,51 @@
+name: 'License Checker'
+description: 'Scan dependencies for license compliance and detect potential license conflicts in your project'
+inputs:
+  github-token:
+    description: 'GitHub token for accessing repository and creating issues/comments'
+    required: true
+  allowed-licenses:
+    description: 'Comma-separated list of allowed license types (e.g., MIT,Apache-2.0,BSD-3-Clause)'
+    required: false
+    default: 'MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD'
+  blocked-licenses:
+    description: 'Comma-separated list of blocked license types (e.g., GPL-3.0,AGPL-3.0)'
+    required: false
+    default: 'GPL-3.0,AGPL-3.0,GPL-2.0,LGPL-3.0'
+  fail-on-blocked:
+    description: 'Whether to fail the action when blocked licenses are found'
+    required: false
+    default: 'true'
+  include-dev-dependencies:
+    description: 'Whether to include dev dependencies in the scan'
+    required: false
+    default: 'false'
+  output-format:
+    description: 'Output format: json, table, or sarif'
+    required: false
+    default: 'table'
+  create-issue:
+    description: 'Create GitHub issue for license violations'
+    required: false
+    default: 'false'
+  package-manager:
+    description: 'Package manager to use: npm, yarn, pnpm, or auto-detect'
+    required: false
+    default: 'auto'
+outputs:
+  violations-count:
+    description: 'Number of license violations found'
+  allowed-count:
+    description: 'Number of dependencies with allowed licenses'
+  unknown-count:
+    description: 'Number of dependencies with unknown or missing licenses'
+  report-path:
+    description: 'Path to the generated license report file'
+  has-violations:
+    description: 'Boolean indicating if any license violations were found'
+runs:
+  using: 'node20'
+  main: 'main.js'
+branding:
+  icon: 'shield'
+  color: 'red'

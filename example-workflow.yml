@@ -1,0 +1,145 @@
+name: License Compliance Check
+
+# Trigger the workflow on pull requests and pushes to main
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  # Allow manual triggering
+  workflow_dispatch:
+  # Weekly scheduled check
+  schedule:
+    - cron: '0 9 * * 1' # Every Monday at 9 AM UTC
+
+jobs:
+  license-check:
+    name: Check License Compliance
+    runs-on: ubuntu-latest
+    
+    # Required permissions for the action
+    permissions:
+      contents: read
+      issues: write
+      security-events: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: |
+          npm ci
+          
+      - name: Run License Compliance Check
+        id: license-check
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Allow common permissive licenses
+          allowed-licenses: 'MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,Unlicense'
+          # Block common copyleft licenses
+          blocked-licenses: 'GPL-2.0,GPL-3.0,AGPL-3.0,LGPL-2.1,LGPL-3.0'
+          # Fail the workflow if blocked licenses are found
+          fail-on-blocked: 'true'
+          # Don't include dev dependencies in production builds
+          include-dev-dependencies: 'false'
+          # Generate SARIF output for GitHub Security tab
+          output-format: 'sarif'
+          # Create an issue for violations
+          create-issue: 'true'
+          # Auto-detect package manager
+          package-manager: 'auto'
+          
+      - name: Upload SARIF results to GitHub Security
+        if: always() && steps.license-check.outputs.violations-count > 0
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: license-report.sarif
+          
+      - name: Upload license report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.*
+          retention-days: 30
+          
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const violationsCount = '${{ steps.license-check.outputs.violations-count }}';
+            const allowedCount = '${{ steps.license-check.outputs.allowed-count }}';
+            const unknownCount = '${{ steps.license-check.outputs.unknown-count }}';
+            
+            let comment = '## 📋 License Compliance Report\n\n';
+            comment += `**Summary:**\n`;
+            comment += `- ✅ Allowed licenses: ${allowedCount}\n`;
+            comment += `- ❌ License violations: ${violationsCount}\n`;
+            comment += `- ⚠️ Unknown licenses: ${unknownCount}\n\n`;
+            
+            if (violationsCount > 0) {
+              comment += '❌ **License compliance check failed!** Please review the violations above.\n\n';
+            } else if (unknownCount > 0) {
+              comment += '⚠️ **Some packages have unknown licenses.** Please review these packages.\n\n';
+            } else {
+              comment += '✅ **All licenses are compliant!** No violations found.\n\n';
+            }
+            
+            comment += 'View the full report in the [Actions tab](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # Additional job for comprehensive dev dependency check (optional)
+  dev-license-check:
+    name: Check Dev Dependencies
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    permissions:
+      contents: read
+      issues: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install all dependencies
+        run: npm ci
+        
+      - name: Check all dependencies including dev
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          allowed-licenses: 'MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,Unlicense'
+          blocked-licenses: 'GPL-2.0,GPL-3.0,AGPL-3.0'
+          fail-on-blocked: 'false' # Don't fail for dev dependencies
+          include-dev-dependencies: 'true'
+          output-format: 'json'
+          create-issue: 'false'
+          
+      - name: Archive dev dependency report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-license-report
+          path: license-report.json
